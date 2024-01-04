@@ -1,9 +1,9 @@
 import sys
-from typing import List, Literal, Tuple, Union
+from typing import Annotated, Any, List, Literal, Tuple, Union
 
 import pytest
 from helpers import assert_xml_equal
-from pydantic import Field
+from pydantic import Discriminator, Field, Tag
 
 from pydantic_xml import BaseXmlModel, RootXmlModel, attr, element
 
@@ -318,6 +318,43 @@ def test_attribute_discriminated_model_tagged_union(type: str):
 
     class TestModel(RootXmlModel, tag='model'):
         root: Union[SubModel1, SubModel2] = Field(..., discriminator='type')
+
+    xml = '''
+    <model>
+        <submodel type="{type}">text</submodel>
+    </model>
+    '''.format(type=type)
+
+    actual_obj = TestModel.from_xml(xml)
+    expected_obj = TestModel.model_validate(dict(type=type, text='text'))
+
+    assert actual_obj == expected_obj
+
+    actual_xml = actual_obj.to_xml()
+    assert_xml_equal(actual_xml, xml)
+
+
+@pytest.mark.parametrize('type', ['type1', 'type2'])
+def test_callable_discriminated_model_tagged_union(type: str):
+    class SubModel1(BaseXmlModel, tag='submodel'):
+        type: str = attr()
+        text: str
+
+    class SubModel2(BaseXmlModel, tag='submodel'):
+        type: str = attr()
+        text: str
+
+    def callable_discriminator(v: Any) -> str:
+        if isinstance(v, dict):
+            return v.get('type')
+        return getattr(v, 'type')
+
+    class TestModel(RootXmlModel, tag='model'):
+        root: Annotated[
+            Union[
+                Annotated[SubModel1, Tag('type1')], 
+                Annotated[SubModel2, Tag('type2')]
+            ], Discriminator(callable_discriminator)] = element()
 
     xml = '''
     <model>
